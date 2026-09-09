@@ -822,6 +822,8 @@ async def update_course(
         sensitive_fields_updated.append("public")
     if course_object.open_to_contributors is not None:
         sensitive_fields_updated.append("open_to_contributors")
+    if course_object.enforce_sequential_progression is not None:
+        sensitive_fields_updated.append("enforce_sequential_progression")
     
     # If sensitive fields are being updated, require additional validation
     if sensitive_fields_updated:

@@ -22,6 +22,7 @@ from src.security.rbac import check_resource_access, AccessAction
 from src.services.courses.activities.versioning import create_activity_version
 from src.services.courses.locks import (
     batch_accessible_restricted_uuids,
+    is_locked_by_incomplete_prerequisites,
     is_locked_for_user,
     is_org_admin,
 )
@@ -322,6 +323,17 @@ async def _apply_activity_lock(
         accessible_restricted_uuids=accessible,
         is_admin=admin,
     )
+
+    # Sequential progression: an incomplete earlier activity locks this one,
+    # independent of the usergroup-based lock_type above. Anonymous users
+    # have no completion history, so they're locked out whenever this is on.
+    if not activity_locked and course.enforce_sequential_progression:
+        if is_anon:
+            activity_locked = True
+        else:
+            activity_locked = await is_locked_by_incomplete_prerequisites(
+                course.id, activity.id, acting_user_id, db_session
+            )
 
     if activity_locked:
         activity_read.content = {}

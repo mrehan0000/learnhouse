@@ -57,6 +57,11 @@ class CourseBase(SQLModel):
     public: bool
     published: bool = Field(default=False)
     open_to_contributors: bool
+    # When true, an activity is locked until every earlier activity in the
+    # course (by chapter order, then activity order within the chapter) has
+    # a completed TrailStep for the current user. Enforced in
+    # _apply_activity_lock alongside the existing usergroup-based locks.
+    enforce_sequential_progression: bool = Field(default=False)
 
 
 class Course(CourseBase, table=True):
@@ -100,6 +105,7 @@ class CourseUpdate(SQLModel):
     public: Optional[bool] = None
     published: Optional[bool] = None
     open_to_contributors: Optional[bool] = None
+    enforce_sequential_progression: Optional[bool] = None
     seo: Optional[dict] = None
     extra_metadata: Optional[dict] = None
 

@@ -21,6 +21,7 @@ from fastapi import HTTPException, status, Request
 from src.security.rbac import check_resource_access, AccessAction
 from src.services.courses.locks import (
     batch_accessible_restricted_uuids,
+    is_locked_by_incomplete_prerequisites,
     is_locked_for_user,
     is_org_admin,
 )
@@ -450,6 +451,12 @@ async def _apply_locks_to_chapters(
                     accessible_restricted_uuids=accessible,
                     is_admin=admin,
                 )
+
+            if not activity_locked and course.enforce_sequential_progression:
+                activity_locked = True if is_anon else await is_locked_by_incomplete_prerequisites(
+                    course.id, activity.id, acting_user_id, db_session
+                )
+
             activity.is_locked = activity_locked
             if activity_locked:
                 activity.content = {}

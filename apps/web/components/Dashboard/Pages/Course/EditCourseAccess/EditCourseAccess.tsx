@@ -5,7 +5,8 @@ import Modal from '@components/Objects/StyledElements/Modal/Modal'
 import { getAPIUrl } from '@services/config/config'
 import { unLinkResourcesToUserGroup } from '@services/usergroups/usergroups'
 import { apiFetch } from '@services/utils/ts/requests'
-import { Check, Globe, SquareUserRound, Users, X } from 'lucide-react'
+import { Check, Globe, ListOrdered, SquareUserRound, Users, X } from 'lucide-react'
+import { Switch } from '@components/ui/switch'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { useOrg } from '@components/Contexts/OrgContext'
 import React, { useEffect, useState, useRef, useCallback } from 'react'
@@ -134,6 +135,29 @@ function EditCourseAccess(_props: EditCourseAccessProps) {
         previousPublicRef.current = isClientPublic;
     }, [isClientPublic, isLoading, isSaving, syncChanges]);
 
+    // Sequential progression: locks an activity until every earlier one (by
+    // chapter/activity order) is completed. Same init/sync pattern as public.
+    const [isSequential, setIsSequential] = useState<boolean | undefined>(undefined);
+    const hasInitializedSequentialRef = useRef(false);
+    const previousSequentialRef = useRef<boolean | undefined>(undefined);
+
+    useEffect(() => {
+        if (!isLoading && courseStructure?.enforce_sequential_progression !== undefined && !hasInitializedSequentialRef.current) {
+            setIsSequential(courseStructure.enforce_sequential_progression);
+            previousSequentialRef.current = courseStructure.enforce_sequential_progression;
+            hasInitializedSequentialRef.current = true;
+        }
+    }, [isLoading, courseStructure?.enforce_sequential_progression]);
+
+    useEffect(() => {
+        if (!hasInitializedSequentialRef.current || isLoading || isSaving) return;
+        if (isSequential === undefined) return;
+        if (isSequential === previousSequentialRef.current) return;
+
+        syncChanges({ enforce_sequential_progression: isSequential }, true);
+        previousSequentialRef.current = isSequential;
+    }, [isSequential, isLoading, isSaving, syncChanges]);
+
     // useCourseFieldSync flushes pending edits on unmount.
 
     const handleSetPublic = useCallback((value: boolean) => {
@@ -224,6 +248,30 @@ function EditCourseAccess(_props: EditCourseAccessProps) {
                             </>
                         )}
                     </div>
+                </div>
+
+                {/* Sequential progression */}
+                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center flex-shrink-0">
+                            <ListOrdered className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <h2 className="font-bold text-base text-gray-800">
+                                {t('dashboard.courses.access.sequential.title', { defaultValue: 'Sequential progression' })}
+                            </h2>
+                            <p className="text-sm text-gray-500 mt-0.5 max-w-md">
+                                {t('dashboard.courses.access.sequential.description', {
+                                    defaultValue: 'Learners must complete every earlier lecture and quiz before an activity unlocks — they cannot skip ahead to a later activity, including the final assessment.',
+                                })}
+                            </p>
+                        </div>
+                    </div>
+                    <Switch
+                        checked={isSequential ?? false}
+                        disabled={isSequential === undefined || isSaving}
+                        onCheckedChange={(value: boolean) => setIsSequential(value)}
+                    />
                 </div>
 
                 {/* User groups (Users-table styled) */}

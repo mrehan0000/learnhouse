@@ -16,6 +16,9 @@ from typing import Iterable
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from src.db.courses.chapter_activities import ChapterActivity
+from src.db.courses.course_chapters import CourseChapter
+from src.db.trail_steps import TrailStep
 from src.db.user_organizations import UserOrganization
 from src.db.usergroup_resources import UserGroupResource
 from src.db.usergroup_user import UserGroupUser
@@ -110,3 +113,78 @@ async def is_locked_for_user(
         acting_user_id, [resource_uuid], db_session
     )
     return resource_uuid not in accessible
+
+
+async def is_locked_by_incomplete_prerequisites(
+    course_id: int,
+    activity_id: int,
+    user_id: int,
+    db_session: AsyncSession,
+) -> bool:
+    """True if an earlier activity in the course is not yet completed.
+
+    "Earlier" is resolved from CourseChapter.order (chapter position within
+    the course) then ChapterActivity.order (activity position within its
+    chapter) -- ordering lives on the join rows, not on Chapter/Activity
+    themselves, since the same resource can be reused elsewhere in a
+    different position.
+
+    Callers are expected to already have checked
+    ``course.enforce_sequential_progression`` and admin/anonymous status;
+    this function only resolves the ordering + completion check.
+    """
+    this_link = (await db_session.execute(
+        select(ChapterActivity.chapter_id, ChapterActivity.order).where(
+            ChapterActivity.course_id == course_id,
+            ChapterActivity.activity_id == activity_id,
+        )
+    )).first()
+    if this_link is None:
+        # Not linked into this course's chapters -- nothing to sequence
+        # against, fail open rather than lock something we can't place.
+        return False
+    this_chapter_id, this_activity_order = this_link
+
+    chapter_orders = dict((await db_session.execute(
+        select(CourseChapter.chapter_id, CourseChapter.order).where(
+            CourseChapter.course_id == course_id
+        )
+    )).all())
+    this_chapter_order = chapter_orders.get(this_chapter_id)
+    if this_chapter_order is None:
+        return False
+
+    all_links = (await db_session.execute(
+        select(
+            ChapterActivity.activity_id,
+            ChapterActivity.chapter_id,
+            ChapterActivity.order,
+        ).where(ChapterActivity.course_id == course_id)
+    )).all()
+
+    prerequisite_ids = [
+        act_id
+        for act_id, chap_id, act_order in all_links
+        if act_id != activity_id
+        and chapter_orders.get(chap_id) is not None
+        and (
+            chapter_orders[chap_id] < this_chapter_order
+            or (
+                chapter_orders[chap_id] == this_chapter_order
+                and act_order < this_activity_order
+            )
+        )
+    ]
+    if not prerequisite_ids:
+        return False
+
+    completed_ids = set((await db_session.execute(
+        select(TrailStep.activity_id).where(
+            TrailStep.course_id == course_id,
+            TrailStep.user_id == user_id,
+            TrailStep.activity_id.in_(prerequisite_ids),
+            TrailStep.complete.is_(True),
+        )
+    )).scalars().all())
+
+    return not set(prerequisite_ids).issubset(completed_ids)
