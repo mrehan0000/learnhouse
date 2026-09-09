@@ -298,12 +298,14 @@ async def _apply_activity_lock(
             acting_user_id, check_uuids, db_session
         )
 
-    # Course-level usergroup membership unlocks everything below it.
-    if course.course_uuid in accessible:
-        return
+    # Course-level usergroup membership unlocks everything below it. This only
+    # short-circuits the usergroup-based lock_type checks below -- it must NOT
+    # return early, since sequential progression is a separate, independent
+    # gate that still applies even to users with course-level access.
+    course_grants_access = course.course_uuid in accessible
 
     chapter_locked = False
-    if parent_chapter_row:
+    if not course_grants_access and parent_chapter_row:
         chapter_locked = await is_locked_for_user(
             parent_chapter_row.lock_type,
             parent_chapter_row.chapter_uuid,
@@ -314,7 +316,7 @@ async def _apply_activity_lock(
             is_admin=admin,
         )
 
-    activity_locked = chapter_locked or await is_locked_for_user(
+    activity_locked = False if course_grants_access else chapter_locked or await is_locked_for_user(
         activity.lock_type,
         activity.activity_uuid,
         course.org_id,
