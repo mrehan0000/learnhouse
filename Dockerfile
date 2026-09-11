@@ -105,10 +105,26 @@ RUN bun install --frozen-lockfile --production
 
 # Copy configs and scripts
 WORKDIR /app
-COPY ./docker/nginx.conf /etc/nginx/http.d/default.conf
+# nginx-default.conf is our override of the stock docker/nginx.conf -- same
+# http.d/default.conf destination, but adds the /home redirect (single-tenant
+# deployments skip the org picker) and static /terms, /privacy, /contact
+# routes (see the legal/ COPY below) that the OSS app has no route for.
+COPY nginx-default.conf /etc/nginx/http.d/default.conf
 COPY ./apps/api/docker-entrypoint.sh /app/api/docker-entrypoint.sh
 COPY ./docker/start.sh /app/start.sh
 RUN chmod +x /app/api/docker-entrypoint.sh /app/start.sh
+
+# Static legal pages served directly by nginx. The OSS app's own Terms/Privacy
+# links fall back to learnhouse.io URLs that are themselves broken.
+COPY legal/terms.html /usr/share/nginx/html/terms.html
+COPY legal/privacy.html /usr/share/nginx/html/privacy.html
+COPY legal/contact.html /usr/share/nginx/html/contact.html
+
+# Run pending Alembic migrations before the app starts, so schema changes
+# shipped in a new image tag (new columns/tables on existing models) are
+# actually applied instead of silently skipped by SQLModel's create_all().
+COPY run-migrations-and-start.sh /app/run-migrations-and-start.sh
+RUN chmod +x /app/run-migrations-and-start.sh
 
 # PYTHONDONTWRITEBYTECODE: the image ships read-only source and gains nothing
 # from writing .pyc files back into it. It also keeps __pycache__ out of the
@@ -118,4 +134,4 @@ ENV PORT=8000 LEARNHOUSE_PORT=9000 COLLAB_PORT=4000 HOSTNAME=0.0.0.0 LEARNHOUSE_
 
 EXPOSE 80 9000 4000
 
-CMD ["sh", "/app/start.sh"]
+CMD ["sh", "/app/run-migrations-and-start.sh"]
