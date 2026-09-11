@@ -325,6 +325,7 @@ async def _apply_activity_lock(
         accessible_restricted_uuids=accessible,
         is_admin=admin,
     )
+    locked_reason = "restricted" if activity_locked else None
 
     # Sequential progression: an incomplete earlier activity locks this one,
     # independent of the usergroup-based lock_type above. Anonymous users
@@ -336,11 +337,14 @@ async def _apply_activity_lock(
             activity_locked = await is_locked_by_incomplete_prerequisites(
                 course.id, activity.id, acting_user_id, db_session
             )
+        if activity_locked:
+            locked_reason = "sequential_progression"
 
     if activity_locked:
         activity_read.content = {}
         activity_read.details = None
         activity_read.is_locked = True
+        activity_read.locked_reason = locked_reason
 
 async def get_activityby_id(
     request: Request,

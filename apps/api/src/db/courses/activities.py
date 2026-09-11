@@ -107,3 +107,7 @@ class ActivityRead(ActivityBase):
     last_modified_by_username: Optional[str] = None
     # Computed per-request: true if current user cannot access this activity.
     is_locked: bool = False
+    # Why is_locked is true, so the client can show an accurate message
+    # instead of a generic one. "restricted" = usergroup/lock_type gate;
+    # "sequential_progression" = an earlier activity isn't complete yet.
+    locked_reason: Optional[str] = None

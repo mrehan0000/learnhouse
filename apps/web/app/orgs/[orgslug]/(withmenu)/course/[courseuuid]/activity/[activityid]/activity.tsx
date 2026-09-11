@@ -389,6 +389,11 @@ function ActivityClient(props: ActivityClientProps) {
       return;
     }
 
+    if (activity.is_locked) {
+      toast.error(t('activities.complete_to_continue', 'Mark this activity as complete to continue.'));
+      return;
+    }
+
     router.push(getUriWithOrg(orgslug, '') + `/course/${cleanCourseUuid}/activity/${activity.cleanUuid}`);
   };
 
@@ -500,6 +505,19 @@ function ActivityClient(props: ActivityClientProps) {
 
   if (activity?.is_locked) {
     const isAuthenticated = session?.status === 'authenticated'
+    const isSequential = activity?.locked_reason === 'sequential_progression'
+    const previousActivity = currentIndex > 0 ? allActivities[currentIndex - 1] : null
+    const cleanCourseUuid = courseuuid?.replace('course_', '')
+
+    let title = t('course.locked_title', 'This activity is locked')
+    let message = t('course.locked_restricted', 'You need to be a member of the right user group to access this. Ask a course admin to add you.')
+    if (!isAuthenticated) {
+      message = t('course.locked_auth_required', 'You need to sign in to access this activity.')
+    } else if (isSequential) {
+      title = t('course.locked_sequential_title', 'Complete the previous lesson first')
+      message = t('course.locked_sequential', 'This course unlocks one lesson at a time. Finish and mark the previous lesson as complete to continue.')
+    }
+
     return (
       <GeneralWrapperStyled>
         <div className="max-w-2xl mx-auto my-16 bg-white rounded-2xl border border-gray-200/80 shadow-sm p-8 text-center">
@@ -507,12 +525,10 @@ function ActivityClient(props: ActivityClientProps) {
             <Lock className="text-rose-500" size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-900 mb-2">
-            {t('course.locked_title', 'This activity is locked')}
+            {title}
           </h1>
           <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-            {isAuthenticated
-              ? t('course.locked_restricted', 'You need to be a member of the right user group to access this. Ask a course admin to add you.')
-              : t('course.locked_auth_required', 'You need to sign in to access this activity.')}
+            {message}
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
             {!isAuthenticated && (
@@ -523,8 +539,16 @@ function ActivityClient(props: ActivityClientProps) {
                 {t('auth.sign_in', 'Sign in')}
               </Link>
             )}
+            {isAuthenticated && isSequential && previousActivity && (
+              <Link
+                href={getUriWithOrg(orgslug, '') + `/course/${cleanCourseUuid}/activity/${previousActivity.cleanUuid}`}
+                className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-colors"
+              >
+                {t('course.back_to_previous_lesson', 'Back to previous lesson')}
+              </Link>
+            )}
             <Link
-              href={getUriWithOrg(orgslug, '') + `/course/${courseuuid}`}
+              href={getUriWithOrg(orgslug, '') + `/course/${cleanCourseUuid}`}
               className="inline-flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors"
             >
               {t('course.back_to_course', 'Back to course')}
@@ -755,11 +779,13 @@ function ActivityClient(props: ActivityClientProps) {
                               }`}
                               disabled={!nextActivity && !isLastActivity}
                               title={
-                                nextActivity
-                                  ? `${t('common.next')}: ${nextActivity.name}`
-                                  : isLastActivity
-                                    ? t('course.finish_course', 'Finish course')
-                                    : t('activities.no_next_activity')
+                                nextActivity?.is_locked
+                                  ? t('activities.complete_to_continue', 'Mark this activity as complete to continue.')
+                                  : nextActivity
+                                    ? `${t('common.next')}: ${nextActivity.name}`
+                                    : isLastActivity
+                                      ? t('course.finish_course', 'Finish course')
+                                      : t('activities.no_next_activity')
                               }
                             >
                               <div className="flex flex-col items-end">
@@ -772,7 +798,11 @@ function ActivityClient(props: ActivityClientProps) {
                                       : t('activities.no_next_activity')}
                                 </span>
                               </div>
-                              <ChevronRight size={20} className="text-gray-800 shrink-0" />
+                              {nextActivity?.is_locked ? (
+                                <Lock size={18} className="text-gray-500 shrink-0" />
+                              ) : (
+                                <ChevronRight size={20} className="text-gray-800 shrink-0" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -1401,6 +1431,13 @@ function NextActivityButton({ course, currentActivityId, orgslug }: { course: an
   const cleanCourseUuid = course.course_uuid?.replace('course_', '');
 
   const navigateToActivity = () => {
+    // The next activity may still be sequentially locked (e.g. this one
+    // hasn't been marked complete yet) -- catch that here instead of letting
+    // the learner land on the locked-activity gate page.
+    if (!isLastActivity && nextActivity.is_locked) {
+      toast.error(t('activities.complete_to_continue', 'Mark this activity as complete to continue.'));
+      return;
+    }
     router.push(
       isLastActivity
         ? getUriWithOrg(orgslug, '') + `/course/${cleanCourseUuid}/activity/end`
@@ -1408,9 +1445,12 @@ function NextActivityButton({ course, currentActivityId, orgslug }: { course: an
     );
   };
 
+  const nextIsLocked = !isLastActivity && nextActivity.is_locked;
+
   return (
     <div
       onClick={navigateToActivity}
+      title={nextIsLocked ? t('activities.complete_to_continue', 'Mark this activity as complete to continue.') : undefined}
       className="bg-gray-200 rounded-md px-3 sm:px-4 shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)] flex flex-col p-2 sm:p-2.5 text-gray-600 hover:cursor-pointer transition delay-150 duration-300 ease-in-out hover:bg-gray-200"
     >
       <span className="text-[10px] font-bold text-gray-500 mb-1 uppercase">{t('common.next')}</span>
@@ -1418,7 +1458,7 @@ function NextActivityButton({ course, currentActivityId, orgslug }: { course: an
         <span className="text-xs sm:text-sm font-semibold truncate max-w-[120px] sm:max-w-[200px]">
           {isLastActivity ? t('course.finish_course', 'Finish course') : nextActivity.name}
         </span>
-        <ChevronRight size={17} className="shrink-0" />
+        {nextIsLocked ? <Lock size={14} className="shrink-0" /> : <ChevronRight size={17} className="shrink-0" />}
       </div>
     </div>
   );

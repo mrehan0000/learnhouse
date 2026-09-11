@@ -1,5 +1,5 @@
 'use client'
-import { BookOpenCheck, Check, FileText, Layers, Video, ChevronLeft, ChevronRight, ChevronDown, Trophy, Package, Puzzle, Globe } from 'lucide-react'
+import { BookOpenCheck, Check, FileText, Layers, Video, ChevronLeft, ChevronRight, ChevronDown, Trophy, Package, Puzzle, Globe, Lock } from 'lucide-react'
 import { MarkdownLogo } from '@phosphor-icons/react'
 import React, { useMemo, memo, useState, useRef, useEffect, useCallback } from 'react'
 import ToolTip from '@components/Objects/StyledElements/Tooltip/Tooltip'
@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTranslation } from 'react-i18next'
 import { useCourseCertification } from '@components/Hooks/useCourseCertification'
+import toast from 'react-hot-toast'
 
 interface Props {
   course: any
@@ -266,6 +267,20 @@ const MobileChapterSelector = memo(({
                   const isCurrent = isActivityCurrent(activity)
                   const activityId = activity.activity_uuid.replace('activity_', '')
 
+                  if (activity.is_locked) {
+                    return (
+                      <div
+                        key={activity.activity_uuid}
+                        className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 cursor-not-allowed"
+                      >
+                        <div className="w-[6px] h-[6px] rounded-full shrink-0 bg-zinc-200" />
+                        <ActivityTypeIcon activityType={activity.activity_type} activitySubType={activity.activity_sub_type} />
+                        <span className="truncate">{activity.name}</span>
+                        <Lock size={12} className="ms-auto shrink-0" />
+                      </div>
+                    )
+                  }
+
                   return (
                     <Link
                       key={activity.activity_uuid}
@@ -389,6 +404,10 @@ function ActivityIndicators(props: Props) {
   const navigateToNext = () => {
     if (currentActivityIndex < allActivities.length - 1) {
       const nextActivity = allActivities[currentActivityIndex + 1]
+      if (nextActivity.is_locked) {
+        toast.error(t('activities.complete_to_continue', 'Mark this activity as complete to continue.'))
+        return
+      }
       const activityId = nextActivity.activity_uuid.replace('activity_', '')
       router.push(getUriWithOrg(orgslug, '') + `/course/${courseid}/activity/${activityId}`)
     } else if (isOnLastActivity) {
@@ -556,6 +575,12 @@ function ActivityIndicators(props: Props) {
                     const isDone = isActivityDone(activity)
                     const isCurrent = isActivityCurrent(activity)
                     const isLast = activityIndex === chapter.activities.length - 1
+                    const segmentClassName = `${isCurrent ? 'flex-2' : 'flex-1'} min-w-[12px] ${!isLast ? 'border-e-[1.5px] border-white' : ''}`
+                    const dot = (
+                      <div
+                        className={`h-[7px] ${activity.is_locked ? 'bg-zinc-200/50' : getActivityClass(activity)} ${isLast ? 'rounded-e-full' : ''} transition-all ${activity.is_locked ? '' : 'hover:brightness-110'}`}
+                      ></div>
+                    )
                     return (
                       <ToolTip
                         sideOffset={8}
@@ -569,21 +594,25 @@ function ActivityIndicators(props: Props) {
                         }
                         key={activity.activity_uuid}
                       >
-                        <Link
-                          prefetch={false}
-                          href={
-                            getUriWithOrg(orgslug, '') +
-                            `/course/${courseid}/activity/${activity.activity_uuid.replace(
-                              'activity_',
-                              ''
-                            )}`
-                          }
-                          className={`${isCurrent ? 'flex-2' : 'flex-1'} min-w-[12px] ${!isLast ? 'border-e-[1.5px] border-white' : ''}`}
-                        >
-                          <div
-                            className={`h-[7px] ${getActivityClass(activity)} ${isLast ? 'rounded-e-full' : ''} transition-all hover:brightness-110`}
-                          ></div>
-                        </Link>
+                        {activity.is_locked ? (
+                          <div className={`${segmentClassName} cursor-not-allowed`} title={t('activities.locked', 'Locked')}>
+                            {dot}
+                          </div>
+                        ) : (
+                          <Link
+                            prefetch={false}
+                            href={
+                              getUriWithOrg(orgslug, '') +
+                              `/course/${courseid}/activity/${activity.activity_uuid.replace(
+                                'activity_',
+                                ''
+                              )}`
+                            }
+                            className={segmentClassName}
+                          >
+                            {dot}
+                          </Link>
+                        )}
                       </ToolTip>
                     )
                   })}

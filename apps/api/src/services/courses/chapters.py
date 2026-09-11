@@ -452,12 +452,16 @@ async def _apply_locks_to_chapters(
                     is_admin=admin,
                 )
 
+            locked_reason = "restricted" if activity_locked else None
             if not activity_locked and course.enforce_sequential_progression:
                 activity_locked = True if is_anon else await is_locked_by_incomplete_prerequisites(
                     course.id, activity.id, acting_user_id, db_session
                 )
+                if activity_locked:
+                    locked_reason = "sequential_progression"
 
             activity.is_locked = activity_locked
+            activity.locked_reason = locked_reason
             if activity_locked:
                 activity.content = {}
                 activity.details = None
