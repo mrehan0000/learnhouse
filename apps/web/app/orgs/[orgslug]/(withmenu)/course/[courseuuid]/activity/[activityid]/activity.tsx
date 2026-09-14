@@ -1527,6 +1527,7 @@ function AssignmentTools(props: {
   const { t } = useTranslation();
   const submission = useAssignmentSubmission() as any
   const session = useLHSession() as any;
+  const org = useOrg() as any;
   const queryClient = useQueryClient();
   const dirtyTasks = useAssignmentDirtyTasks();
   const [gradeData, setGradeData] = React.useState<any>(null);
@@ -1569,6 +1570,13 @@ function AssignmentTools(props: {
           // fetched with it stripped, so refetch that too — otherwise the
           // learner has to reload the page to see what they just earned.
           queryClient.invalidateQueries({ queryKey: queryKeys.assignments.detail(props.assignment?.assignment_uuid) })
+          // A pass may complete the TrailStep for this activity server-side,
+          // which can unlock the next one under sequential progression. Without
+          // this, the Next button and progress dots keep showing it locked
+          // until an unrelated refetch happens to occur.
+          const cleanCourseUuid = props.course.course_uuid?.replace('course_', '');
+          queryClient.invalidateQueries({ queryKey: queryKeys.trail.org(org?.id) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(cleanCourseUuid) })
         }
         else {
           toast.error(t('assignments.failed_submit_assignment'))
@@ -1608,6 +1616,14 @@ function AssignmentTools(props: {
         // answer server-side. Refetch so the learner isn't left reading the
         // corrigé they are no longer entitled to for this attempt.
         queryClient.invalidateQueries({ queryKey: queryKeys.assignments.detail(props.assignment?.assignment_uuid) });
+        // A retry also resets this activity's TrailStep to incomplete
+        // server-side, which can re-lock whatever came after it under
+        // sequential progression.
+        {
+          const cleanCourseUuid = props.course.course_uuid?.replace('course_', '');
+          queryClient.invalidateQueries({ queryKey: queryKeys.trail.org(org?.id) });
+          queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(cleanCourseUuid) });
+        }
         setGradeData(null);
         setIsGradeModalOpen(false);
         // Re-arm the auto-open on this fresh attempt so the next graded
@@ -1638,6 +1654,14 @@ function AssignmentTools(props: {
   useEffect(() => {
     if ( submission && submission.length > 0 && submission[0].submission_status === 'GRADED') {
       getGradingBasedOnMethod();
+      // Grading may finish asynchronously (e.g. CODE tasks graded in the
+      // background) well after submitForGradingUI's own invalidation ran, so
+      // catch the completion here too -- otherwise the next activity can be
+      // stuck showing locked under sequential progression until an unrelated
+      // refetch happens to occur.
+      const cleanCourseUuid = props.course.course_uuid?.replace('course_', '');
+      queryClient.invalidateQueries({ queryKey: queryKeys.trail.org(org?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(cleanCourseUuid) });
     }
   }
     , [submission, props.assignment])
