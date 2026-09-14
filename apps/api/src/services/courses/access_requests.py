@@ -191,29 +191,46 @@ async def list_access_requests(
     ]
 
 
+_ACCESS_REQUEST_USERGROUP_NAME = "Approved: {name}"
+
+
 async def _course_access_usergroup(
     course: Course, db_session: AsyncSession
 ) -> UserGroup:
-    """The usergroup that grants access to this course, creating one if the
-    course has none attached yet. Reuses whatever usergroup an admin already
-    wired up (so manually curated access lists keep working); only invents
-    a new one as a bootstrap for a course with no usergroup attached."""
-    existing_link = (await db_session.execute(
-        select(UserGroupResource).where(
-            UserGroupResource.resource_uuid == course.course_uuid
+    """The usergroup that grants access to this course via an approved
+    request. Always one this feature owns -- NEVER reuses an arbitrary
+    pre-existing usergroup already linked to the course (e.g. "DF Employees"
+    or "Admin"). A course can have several usergroups attached for unrelated
+    reasons, and any of those may also grant access to many other resources;
+    adding an approved requester to one of those would silently over-grant
+    them access to everything else that group touches, not just this course.
+    Identifies "its own" group by an exact name match plus a live link back
+    to this course, so repeat approvals for the same course reuse the same
+    dedicated group instead of creating a new one each time."""
+    marker_name = _ACCESS_REQUEST_USERGROUP_NAME.format(name=course.name)[:255]
+    existing = (await db_session.execute(
+        select(UserGroup).where(
+            UserGroup.org_id == course.org_id,
+            UserGroup.name == marker_name,
         )
     )).scalars().first()
-    if existing_link:
-        usergroup = (await db_session.execute(
-            select(UserGroup).where(UserGroup.id == existing_link.usergroup_id)
+    if existing:
+        still_linked = (await db_session.execute(
+            select(UserGroupResource).where(
+                UserGroupResource.usergroup_id == existing.id,
+                UserGroupResource.resource_uuid == course.course_uuid,
+            )
         )).scalars().first()
-        if usergroup:
-            return usergroup
+        if still_linked:
+            return existing
 
     now = str(datetime.now())
     usergroup = UserGroup(
-        name=f"Approved: {course.name}"[:255],
-        description=f"Auto-created for approved access requests to {course.name}.",
+        name=marker_name,
+        description=(
+            f"Auto-created by the access-request feature for {course.name}. "
+            "Only ever linked to this one course -- do not reuse for anything else."
+        ),
         org_id=course.org_id,
         usergroup_uuid=f"usergroup_{uuid4()}",
         creation_date=now,
