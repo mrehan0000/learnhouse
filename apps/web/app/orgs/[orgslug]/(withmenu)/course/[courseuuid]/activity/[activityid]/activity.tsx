@@ -4,6 +4,7 @@ import { getUriWithOrg } from '@services/config/config'
 import { BookOpenCheck, CheckCircle, ChevronLeft, ChevronRight, MessageSquare, UserRoundPen, Edit2, Loader2, Maximize2, Minimize2, Trophy, Sparkles, XCircle, Lock, RotateCcw, Infinity as InfinityIcon } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { markActivityAsComplete, unmarkActivityAsComplete } from '@services/courses/activity'
+import { requestCourseAccess } from '@services/courses/accessRequests'
 import { usePathname, useRouter } from 'next/navigation'
 import AuthenticatedClientElement from '@components/Security/AuthenticatedClientElement'
 import { getCourseThumbnailMediaDirectory, getUserAvatarMediaDirectory } from '@services/media/media'
@@ -249,6 +250,7 @@ function ActivityClient(props: ActivityClientProps) {
   const session = useLHSession() as any;
   const pathname = usePathname()
   const access_token = session?.data?.tokens?.access_token;
+  const [accessRequestState, setAccessRequestState] = React.useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle')
   const [bgColor, setBgColor] = React.useState('bg-white nice-shadow')
   const [assignment, setAssignment] = React.useState(null) as any;
   const [_markStatusButtonActive, setMarkStatusButtonActive] = React.useState(false);
@@ -516,6 +518,27 @@ function ActivityClient(props: ActivityClientProps) {
     } else if (isSequential) {
       title = t('course.locked_sequential_title', 'Complete the previous lesson first')
       message = t('course.locked_sequential', 'This course unlocks one lesson at a time. Finish and mark the previous lesson as complete to continue.')
+    } else if (accessRequestState === 'submitted') {
+      title = t('course.access_request_pending_title', 'Access request sent')
+      message = t('course.access_request_pending', 'An admin has been notified. You will be able to open this course once your request is approved.')
+    }
+
+    const submitAccessRequest = async () => {
+      if (accessRequestState === 'submitting' || accessRequestState === 'submitted') return
+      setAccessRequestState('submitting')
+      try {
+        await requestCourseAccess(courseuuid, access_token)
+        setAccessRequestState('submitted')
+      } catch (err: any) {
+        // A 409 here means a request already exists (pending or approved) --
+        // treat that the same as a fresh submission from the learner's point
+        // of view, since either way there's nothing more for them to do.
+        if (err?.status === 409 || err?.response?.status === 409) {
+          setAccessRequestState('submitted')
+        } else {
+          setAccessRequestState('error')
+        }
+      }
     }
 
     return (
@@ -546,6 +569,19 @@ function ActivityClient(props: ActivityClientProps) {
               >
                 {t('course.back_to_previous_lesson', 'Back to previous lesson')}
               </Link>
+            )}
+            {isAuthenticated && !isSequential && accessRequestState !== 'submitted' && (
+              <button
+                onClick={submitAccessRequest}
+                disabled={accessRequestState === 'submitting'}
+                className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-60"
+              >
+                {accessRequestState === 'submitting'
+                  ? t('course.requesting_access', 'Requesting...')
+                  : accessRequestState === 'error'
+                    ? t('course.request_access_retry', 'Try again')
+                    : t('course.request_access', 'Request access')}
+              </button>
             )}
             <Link
               href={getUriWithOrg(orgslug, '') + `/course/${cleanCourseUuid}`}

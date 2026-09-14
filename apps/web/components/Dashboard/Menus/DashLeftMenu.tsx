@@ -598,6 +598,14 @@ function DashLeftMenu() {
               })()}
             </HoverMenu>
 
+            <MenuLink
+              href="/dash/access-requests"
+              icon={<Lock size={20} weight="fill" />}
+              label={t('dashboard.access_requests.nav_label', 'Access requests')}
+              isCollapsed={isCollapsed}
+              active={isActivePath('/dash/access-requests')}
+            />
+
             {showPayments && (
               <MenuLink
                 href="/dash/payments/overview"

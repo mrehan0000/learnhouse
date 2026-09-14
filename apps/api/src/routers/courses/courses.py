@@ -45,6 +45,13 @@ from src.services.courses.updates import (
     get_updates_by_course_uuid,
     update_update,
 )
+from src.db.course_access_requests import AccessRequestStatus, CourseAccessRequestRead
+from src.services.courses.access_requests import (
+    approve_access_request,
+    list_access_requests,
+    reject_access_request,
+    request_course_access,
+)
 from src.services.courses.contributors import (
     apply_course_contributor,
     update_course_contributor,
@@ -1076,3 +1083,54 @@ async def api_get_course_user_rights(
     - All permissions are calculated based on current user context
     """
     return await get_course_user_rights(request, course_uuid, current_user, db_session)
+
+
+@router.post("/{course_uuid}/access_requests", response_model=CourseAccessRequestRead)
+async def api_request_course_access(
+    request: Request,
+    course_uuid: str,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser = Depends(get_current_user),
+) -> CourseAccessRequestRead:
+    """
+    Request access to a restricted course. Creates a pending request that an
+    org admin must approve before the course unlocks for this user.
+    """
+    return await request_course_access(request, course_uuid, current_user, db_session)
+
+
+@router.get("/access_requests/list", response_model=List[CourseAccessRequestRead])
+async def api_list_course_access_requests(
+    org_id: int,
+    status_filter: Optional[AccessRequestStatus] = Query(default=AccessRequestStatus.PENDING),
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser = Depends(get_current_user),
+) -> List[CourseAccessRequestRead]:
+    """
+    List course access requests for an organization. Admin only.
+    """
+    return await list_access_requests(org_id, current_user, db_session, status_filter)
+
+
+@router.post("/access_requests/{request_id}/approve", response_model=CourseAccessRequestRead)
+async def api_approve_course_access_request(
+    request_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser = Depends(get_current_user),
+) -> CourseAccessRequestRead:
+    """
+    Approve a pending course access request. Admin only.
+    """
+    return await approve_access_request(request_id, current_user, db_session)
+
+
+@router.post("/access_requests/{request_id}/reject", response_model=CourseAccessRequestRead)
+async def api_reject_course_access_request(
+    request_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser = Depends(get_current_user),
+) -> CourseAccessRequestRead:
+    """
+    Reject a pending course access request. Admin only.
+    """
+    return await reject_access_request(request_id, current_user, db_session)

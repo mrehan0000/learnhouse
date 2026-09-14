@@ -649,12 +649,17 @@ const CourseClient = (props: any) => {
                               </div>
                             )
 
-                            if (locked) {
+                            // A sequential-progression lock has nothing to click through to
+                            // (there's no action to take besides finishing the prior activity),
+                            // so it stays a dead, non-clickable row. A restricted-access lock is
+                            // different -- clicking through reaches a gate with a Request Access
+                            // button, so it needs to actually navigate.
+                            if (locked && activity.locked_reason === 'sequential_progression') {
                               return (
                                 <div
                                   key={activity.activity_uuid}
                                   className="block activity-container px-4 py-4 cursor-not-allowed select-none"
-                                  title={t('course.activity_locked_hint', 'Sign in or join the right user group to unlock this.')}
+                                  title={t('course.activity_locked_hint_sequential', 'Complete the previous activity to unlock this.')}
                                 >
                                   {RowInner}
                                 </div>
