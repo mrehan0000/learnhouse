@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 from sqlmodel import Field, SQLModel
-from sqlalchemy import ForeignKey, Column, Integer, UniqueConstraint
+from sqlalchemy import ForeignKey, Column, Integer, String, UniqueConstraint
 
 
 class AccessRequestStatus(str, Enum):
@@ -18,7 +18,15 @@ class CourseAccessRequest(SQLModel, table=True):
         UniqueConstraint("course_id", "user_id", name="uq_access_request_course_user"),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
-    status: AccessRequestStatus = Field(default=AccessRequestStatus.PENDING)
+    # Explicit String column -- SQLModel's default mapping for a (str, Enum)
+    # field is a native Postgres ENUM type, but the migration created a plain
+    # varchar column. Left as the default inference, SQLAlchemy binds status
+    # filters with a `::accessrequeststatus` cast that no such DB type
+    # satisfies, and any WHERE on status fails with "operator does not
+    # exist". This keeps the Python-side type matching the actual column.
+    status: AccessRequestStatus = Field(
+        default=AccessRequestStatus.PENDING, sa_column=Column(String, nullable=False)
+    )
     course_id: int = Field(
         sa_column=Column(Integer, ForeignKey("course.id", ondelete="CASCADE"), index=True)
     )
