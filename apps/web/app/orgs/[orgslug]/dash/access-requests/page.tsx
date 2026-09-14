@@ -30,25 +30,27 @@ function AccessRequestsHome() {
     staleTime: 30_000,
   })
 
-  const requests: any[] = requestsResult?.success ? requestsResult.data : []
+  // These endpoints return the resource directly (a bare array / object),
+  // not the {success, data} envelope some other API calls in this codebase
+  // use -- that shape comes from those specific endpoints' own response
+  // bodies, not from errorHandling(), which just returns res.json() as-is.
+  const requests: any[] = Array.isArray(requestsResult) ? requestsResult : []
 
   const decide = async (id: number, action: 'approve' | 'reject') => {
     if (pendingActionId) return
     setPendingActionId(id)
     try {
-      const res = action === 'approve'
-        ? await approveCourseAccessRequest(id, access_token)
-        : await rejectCourseAccessRequest(id, access_token)
-      if (res.success) {
-        toast.success(
-          action === 'approve'
-            ? t('dashboard.access_requests.approved', 'Access approved')
-            : t('dashboard.access_requests.rejected', 'Request rejected')
-        )
-        queryClient.invalidateQueries({ queryKey })
-      } else {
-        toast.error(t('dashboard.access_requests.action_failed', 'Something went wrong'))
-      }
+      await (action === 'approve'
+        ? approveCourseAccessRequest(id, access_token)
+        : rejectCourseAccessRequest(id, access_token))
+      toast.success(
+        action === 'approve'
+          ? t('dashboard.access_requests.approved', 'Access approved')
+          : t('dashboard.access_requests.rejected', 'Request rejected')
+      )
+      queryClient.invalidateQueries({ queryKey })
+    } catch {
+      toast.error(t('dashboard.access_requests.action_failed', 'Something went wrong'))
     } finally {
       setPendingActionId(null)
     }
