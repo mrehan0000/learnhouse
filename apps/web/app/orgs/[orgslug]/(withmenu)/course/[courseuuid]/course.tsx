@@ -200,7 +200,7 @@ const CourseClient = (props: any) => {
       if (accessRequestState === 'submitting' || accessRequestState === 'submitted') return
       setAccessRequestState('submitting')
       try {
-        await requestCourseAccess(courseuuid, access_token)
+        await requestCourseAccess(course.course_uuid, access_token)
         setAccessRequestState('submitted')
       } catch (err: any) {
         if (err?.status === 409) {

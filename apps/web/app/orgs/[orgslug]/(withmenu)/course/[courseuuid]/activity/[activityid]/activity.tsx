@@ -527,7 +527,7 @@ function ActivityClient(props: ActivityClientProps) {
       if (accessRequestState === 'submitting' || accessRequestState === 'submitted') return
       setAccessRequestState('submitting')
       try {
-        await requestCourseAccess(courseuuid, access_token)
+        await requestCourseAccess(course.course_uuid, access_token)
         setAccessRequestState('submitted')
       } catch (err: any) {
         // A 409 here means a request already exists (pending or approved) --
