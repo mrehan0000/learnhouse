@@ -122,6 +122,12 @@ class CourseRead(CourseBase):
     thumbnail_video: Optional[str] = Field(default="")
     seo: Optional[dict] = None
     extra_metadata: Optional[dict] = None
+    # Computed per-request: true when the viewer isn't a member of a
+    # usergroup this course is restricted to. Listing still returns the
+    # course (name/thumbnail only, via get_courses_orgslug) so it's
+    # discoverable and requestable rather than silently invisible; content
+    # access itself is still enforced separately by check_resource_access.
+    is_locked: bool = False
 
 
 class FullCourseRead(CourseBase):
@@ -139,6 +145,11 @@ class FullCourseRead(CourseBase):
     # Chapters, Activities
     chapters: List[ChapterRead]
     authors: List[AuthorWithRole]
+    # Computed per-request: true when the viewer lacks access (not a public
+    # course, not a member of a usergroup it's restricted to). Chapters come
+    # back empty rather than raising, so the frontend can render a gate with
+    # a Request Access button instead of an error page.
+    is_locked: bool = False
     pass
 
 

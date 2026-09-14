@@ -28,12 +28,14 @@ import CourseCommunitySection from '@components/Objects/Communities/CourseCommun
 import CourseShare from '@components/Objects/Courses/CourseShare/CourseShare'
 import { JsonLd } from '@components/SEO/JsonLd'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
+import { requestCourseAccess } from '@services/courses/accessRequests'
 
 const CourseClient = (props: any) => {
   const { t } = useTranslation()
   const [learnings, setLearnings] = useState<any>([])
   const [expandedChapters, setExpandedChapters] = useState<{[key: string]: boolean}>({})
   const [activeThumbnailType, setActiveThumbnailType] = useState<'image' | 'video'>('image')
+  const [accessRequestState, setAccessRequestState] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle')
   const courseuuid = props.courseuuid
   const orgslug = props.orgslug
   const initialCourse = props.course
@@ -181,6 +183,77 @@ const CourseClient = (props: any) => {
           <Link href={getUriWithOrg(orgslug, '/courses')} className="text-blue-600 hover:underline">
             {t('course.backToCourses', 'Back to Courses')}
           </Link>
+        </div>
+      </GeneralWrapperStyled>
+    )
+  }
+
+  // Restricted courses are now discoverable in listings (locked, not hidden),
+  // so a non-member opening one lands here instead of the get_course_meta
+  // call raising a 403 -- name/thumbnail/authors are still returned, only
+  // chapters come back empty. See course_access_requests.py for the flow
+  // this button kicks off.
+  if (course?.is_locked) {
+    const isAuthenticated = session?.status === 'authenticated'
+
+    const submitAccessRequest = async () => {
+      if (accessRequestState === 'submitting' || accessRequestState === 'submitted') return
+      setAccessRequestState('submitting')
+      try {
+        await requestCourseAccess(courseuuid, access_token)
+        setAccessRequestState('submitted')
+      } catch (err: any) {
+        if (err?.status === 409) {
+          setAccessRequestState('submitted')
+        } else {
+          setAccessRequestState('error')
+        }
+      }
+    }
+
+    return (
+      <GeneralWrapperStyled>
+        <div className="max-w-2xl mx-auto my-16 bg-white rounded-2xl border border-gray-200/80 shadow-sm p-8 text-center">
+          <div className="mx-auto w-14 h-14 rounded-full bg-rose-50 flex items-center justify-center mb-4">
+            <Lock className="text-rose-500" size={24} />
+          </div>
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">{course.name}</h1>
+          <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+            {!isAuthenticated
+              ? t('course.locked_auth_required', 'You need to sign in to access this course.')
+              : accessRequestState === 'submitted'
+                ? t('course.access_request_pending', 'An admin has been notified. You will be able to open this course once your request is approved.')
+                : t('course.locked_restricted', 'You need to be a member of the right user group to access this. Ask a course admin to add you.')}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            {!isAuthenticated && (
+              <Link
+                href={getUriWithOrg(orgslug, '/login')}
+                className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-colors"
+              >
+                {t('auth.sign_in', 'Sign in')}
+              </Link>
+            )}
+            {isAuthenticated && accessRequestState !== 'submitted' && (
+              <button
+                onClick={submitAccessRequest}
+                disabled={accessRequestState === 'submitting'}
+                className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-60"
+              >
+                {accessRequestState === 'submitting'
+                  ? t('course.requesting_access', 'Requesting...')
+                  : accessRequestState === 'error'
+                    ? t('course.request_access_retry', 'Try again')
+                    : t('course.request_access', 'Request access')}
+              </button>
+            )}
+            <Link
+              href={getUriWithOrg(orgslug, '/courses')}
+              className="inline-flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors"
+            >
+              {t('course.backToCourses', 'Back to Courses')}
+            </Link>
+          </div>
         </div>
       </GeneralWrapperStyled>
     )

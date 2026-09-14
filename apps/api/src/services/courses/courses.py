@@ -180,15 +180,38 @@ async def get_course_meta(
     author_results = [(ra, u) for _, ra, u, _ in results if ra is not None and u is not None]
 
     # DASHBOARD context lets authors/admins/usergroup members access unpublished
-    # courses; regular users still fall back to public view rules.
-    await check_resource_access(
+    # courses; regular users still fall back to public view rules. Denial does
+    # NOT raise here (unlike get_course, the dashboard editor's fetch) -- a
+    # restricted course is now discoverable in listings, so a non-member
+    # opening it needs a locked gate with a Request Access button, not a 403
+    # error page with no way forward.
+    access_decision = await check_resource_access(
         request,
         db_session,
         current_user,
         course.course_uuid,
         AccessAction.READ,
         context=AccessContext.DASHBOARD,
+        raise_on_deny=False,
     )
+    if not access_decision.allowed:
+        authors = [
+            AuthorWithRole(
+                user=UserRead.model_validate(user),
+                authorship=resource_author.authorship,
+                authorship_status=resource_author.authorship_status,
+                creation_date=resource_author.creation_date,
+                update_date=resource_author.update_date,
+            )
+            for resource_author, user in author_results
+        ]
+        return FullCourseRead(
+            **course.model_dump(),
+            org_uuid=org.org_uuid,
+            authors=authors,
+            chapters=[],
+            is_locked=True,
+        )
 
     # Permission check passed — try Redis cache for the heavy data.
     # SECURITY: chapter/activity content is lock-stripped PER USER in
@@ -319,10 +342,12 @@ async def get_courses_orgslug(
             pass
         else:
             # For regular users, show:
-            # 1. Published AND public courses
-            # 2. Published courses not in any UserGroup
-            # 3. Courses (including unpublished) in UserGroups where the user is a member
-            # 4. Courses (including unpublished) where the user is a resource author
+            # 1. Any published course -- public or usergroup-restricted. Restricted
+            #    courses are now discoverable (locked, not hidden) so a non-member
+            #    can find one and use the Request Access flow instead of needing
+            #    a direct link to a course they don't know exists.
+            # 2. Courses (including unpublished) in UserGroups where the user is a member
+            # 3. Courses (including unpublished) where the user is a resource author
             #
             # This allows UserGroup members and course authors to see unpublished courses
             # they have access to, while other users only see published courses.
@@ -340,10 +365,9 @@ async def get_courses_orgslug(
                     ResourceAuthor.authorship_status == ResourceAuthorshipStatusEnum.ACTIVE
                 ))  # type: ignore
                 .where(or_(
-                    and_(Course.published == True, Course.public == True),  # Published public courses
-                    and_(Course.published == True, UserGroupResource.resource_uuid.is_(None)),  # Published courses not in any UserGroup
-                    UserGroupUser.user_id == acting_user_id,  # Courses in UserGroups where user is a member (including unpublished)
-                    ResourceAuthor.user_id.isnot(None)  # Courses where user is an ACTIVE resource author
+                    Course.published == True,  # Any published course, restricted or not
+                    UserGroupUser.user_id == acting_user_id,  # Unpublished course in a UserGroup the user is a member of
+                    ResourceAuthor.user_id.isnot(None)  # Unpublished course where user is an ACTIVE resource author
                 ))
             )
 
@@ -359,7 +383,25 @@ async def get_courses_orgslug(
 
     # Get all course UUIDs
     course_uuids = [course.course_uuid for course in courses]
-    
+
+    # Which of these courses are usergroup-restricted at all, and which of
+    # those the acting user actually has access to -- same batch check the
+    # activity/chapter lock logic uses, reused here so listing agrees with
+    # what happens once the user actually opens the course.
+    restricted_uuids: set = set()
+    accessible_uuids: set = set()
+    if not is_anon and not can_view_unpublished:
+        restricted_uuids = set((await db_session.execute(
+            select(UserGroupResource.resource_uuid).where(
+                UserGroupResource.resource_uuid.in_(course_uuids)
+            )
+        )).scalars().all())
+        if restricted_uuids:
+            from src.services.courses.locks import batch_accessible_restricted_uuids
+            accessible_uuids = await batch_accessible_restricted_uuids(
+                acting_user_id, restricted_uuids, db_session
+            )
+
     # Fetch all authors for all courses in a single query
     authors_query = (
         select(ResourceAuthor, User)
@@ -390,10 +432,19 @@ async def get_courses_orgslug(
     # Create CourseRead objects with authors
     course_reads = []
     for course in courses:
+        course_locked = (
+            course.course_uuid in restricted_uuids
+            and course.course_uuid not in accessible_uuids
+            and not any(
+                a.user.id == acting_user_id
+                for a in course_authors.get(course.course_uuid, [])
+            )
+        )
         course_read = CourseRead.model_validate({
             **course.model_dump(),
             "id": course.id or 0,  # Ensure id is never None
             "authors": course_authors.get(course.course_uuid, []),
+            "is_locked": course_locked,
         })
         course_reads.append(course_read)
 

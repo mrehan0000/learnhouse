@@ -37,6 +37,7 @@ type Course = {
   update_date: string
   public?: boolean
   published?: boolean
+  is_locked?: boolean
   authors?: Array<{
     user: {
       id: string
@@ -200,6 +201,14 @@ function CourseThumbnail({ course, orgslug, customLink, isDashboard = false, isS
           style={{ backgroundImage: `url(${thumbnailImage})` }}
         />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300" />
+        {course.is_locked && (
+          <div className="absolute bottom-2 end-2">
+            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-rose-50 border border-rose-200 text-rose-600 rounded-full">
+              <Lock size={10} />
+              {t('course.locked', 'Locked')}
+            </span>
+          </div>
+        )}
         {isDashboard && (
           <div className="absolute bottom-2 start-2">
             {course.published ? (
